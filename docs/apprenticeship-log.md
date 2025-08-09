@@ -24,6 +24,8 @@
 - [x] Installed and configured KVM + libvirt on Ubuntu 22.04 Server
 - [x] Implemented `/vms` endpoint to list all defined and running VMs via libvirt
 
+
+
 **In Progress:**
 - Expanding libvirt integration to include VM creation, shutdown, and deletion
 
