@@ -22,7 +22,7 @@
 - [x] Scaffolded FastAPI app with `/` and `/status` endpoints
 - [x] Added `docs/apprenticeship-log.md` for progress tracking
 - [x] Installed and configured KVM + libvirt on Ubuntu 22.04 Server
-- [ ] Implemented `/vms` endpoint to list all defined and running VMs via libvirt
+- [x] Implemented `/vms` endpoint to list all defined and running VMs via libvirt
 
 **In Progress:**
 - Expanding libvirt integration to include VM creation, shutdown, and deletion
