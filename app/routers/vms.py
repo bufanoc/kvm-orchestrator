@@ -6,7 +6,11 @@ from app.models import CreateVm
 # Import the create_vm function (handles VM creation logic) from app/services/vm_create.py.
 from app.services.vm_create import create_vm
 # Import VM lifecycle functions from app/services/libvirt_client.py.
-from app.services.libvirt_client import list_vms, get_vm_info, vm_start, vm_shutdown, vm_destroy, vm_delete
+from app.services.libvirt_client import (
+    list_vms, get_vm_info, vm_start, vm_shutdown, vm_destroy, vm_delete,
+    get_vm_macs,  # <- added 08112025
+)
+
 
 import subprocess, re, time # Added on 08102025
 
@@ -79,31 +83,37 @@ def create_vm_endpoint(spec: CreateVm):
     if get_vm_info(spec.name) is not None:
         raise HTTPException(status_code=409, detail=f"VM '{spec.name}' already exists")
 
-    # 2) Create the VM
+    # 2) Create the VM (non-blocking)
     create_vm(
-        name=spec.name,           # VM name (string, validated by CreateVm in app/models.py)
-        vcpus=spec.vcpus,         # Number of virtual CPUs (int)
-        memory_mb=spec.memory_mb, # Memory in MB (int)
-        disk_gb=spec.disk_gb,     # Disk size in GB (int)
-        network=spec.network,     # Network name or config (string)
-        ssh_pubkey=spec.ssh_pubkey, # SSH public key (string, see app/models.py for usage)
+        name=spec.name,
+        vcpus=spec.vcpus,
+        memory_mb=spec.memory_mb,
+        disk_gb=spec.disk_gb,
+        network=spec.network,
+        ssh_pubkey=spec.ssh_pubkey,
     )
 
-    # 3) Poll DHCP for an IP (up to ~60s)
-    ip = _wait_for_ip(spec.name, network=spec.network, timeout=60, interval=2)
+    # 3) Poll DHCP by MAC (more reliable than hostname)
+    macs = get_vm_macs(spec.name)
+    ip = _wait_for_ip(macs=macs, network=spec.network, timeout=120, interval=2)
+
     return {"message": f"VM '{spec.name}' created", "name": spec.name, "ip": ip}
-def _wait_for_ip(name: str, network: str = "default", timeout: int = 60, interval: int = 2) -> str | None:
+
+def _wait_for_ip(macs: list[str], network: str = "default", timeout: int = 120, interval: int = 2) -> str | None:
     """
-    Poll `virsh net-dhcp-leases <network>` for a lease that includes the VM's name.
-    Returns the IPv4 string or None if not found within timeout.
+    Poll `virsh net-dhcp-leases <network>` and match leases by MAC addresses.
+    Return IPv4 string or None if not found within timeout.
     """
+    macs = [m.lower() for m in (macs or [])]
     deadline = time.time() + timeout
+    ip_re = re.compile(r"(\d+\.\d+\.\d+\.\d+)/\d+")
     while time.time() < deadline:
         try:
             out = subprocess.check_output(["virsh", "net-dhcp-leases", network], text=True)
             for line in out.splitlines():
-                if name in line:
-                    m = re.search(r"(\d+\.\d+\.\d+\.\d+)/\d+", line)
+                line_l = line.lower()
+                if any(mac in line_l for mac in macs):
+                    m = ip_re.search(line)
                     if m:
                         return m.group(1)
         except subprocess.CalledProcessError:

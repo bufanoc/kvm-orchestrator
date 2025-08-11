@@ -105,6 +105,7 @@ def _domain_summary(dom):
     }
 
 
+
 # Helper function: get detailed info about a VM (adds vcpus and memory info)
 def _domain_details(dom):
     info = _domain_summary(dom)
@@ -120,6 +121,34 @@ def _domain_details(dom):
         # If we can't get details, just skip them
         pass
     return info
+
+
+# Helper function: get all interface MAC addresses for a VM by name
+# Returns a list of MAC addresses (lowercased)
+def get_vm_macs(name: str, uri: str = "qemu:///system") -> list[str]:
+    """
+    Return all interface MAC addresses for the domain (lowercased).
+    """
+    # Open a connection to the libvirt daemon
+    conn = get_conn(uri)
+    try:
+        # Look up the VM (domain) by its name
+        dom = conn.lookupByName(name)
+        # Get the XML description of the VM (contains all config info)
+        xml = dom.XMLDesc(0)
+        # Parse the XML using lxml.etree
+        root = etree.fromstring(xml.encode())
+        macs = []
+        # Find all <mac> elements under <devices>/<interface> in the XML
+        for mac in root.findall(".//devices/interface/mac"):
+            addr = mac.get("address")  # Get the MAC address attribute
+            if addr:
+                macs.append(addr.lower())  # Add the MAC address (lowercased) to the list
+        # Return the list of MAC addresses
+        return macs
+    finally:
+        # Always close the connection to free resources
+        conn.close()
 
 
 def vm_start(name: str, uri: str = "qemu:///system"):
