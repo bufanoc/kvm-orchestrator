@@ -15,37 +15,57 @@ def _run(cmd: list[str]) -> None:
     subprocess.run(cmd, check=True)
 
 
+
 # Create a cloud-init seed ISO for the VM, containing user-data and meta-data
-# This ISO is used to set the hostname, user, and SSH key on first boot
+# This ISO is used to set up the VM's hostname, user account, SSH key, and install the qemu-guest-agent on first boot.
 # (Referenced in create_vm below)
 def _mk_seed_iso(name: str, username: str, ssh_pubkey: Optional[str]) -> str:
-    user_data = [
-        "#cloud-config",
-        f"hostname: {name}",
-        # Create a user with sudo privileges and no password required
-        f"users:\n  - name: {username}\n    groups: [sudo]\n    shell: /bin/bash\n    sudo: ['ALL=(ALL) NOPASSWD:ALL']",
+    # Build the cloud-init user-data file as a list of lines (YAML format)
+    lines = [
+        "#cloud-config",  # Tells cloud-init this is a config file
+        f"hostname: {name}",  # Set the VM's hostname
+        "package_update: true",  # Update package list on first boot
+        "packages:",
+        "  - qemu-guest-agent",  # Install the qemu-guest-agent package
+        "users:",
+        f"  - name: {username}",  # Create a user with the given username
+        "    groups: [sudo]",  # Add user to sudo group
+        "    shell: /bin/bash",  # Set default shell
+        "    sudo: ['ALL=(ALL) NOPASSWD:ALL']",  # Allow passwordless sudo
     ]
+    # If an SSH public key is provided, add it to the user's authorized_keys
     if ssh_pubkey:
-        # If an SSH public key is provided, add it to the authorized_keys
-        user_data.append(f"    ssh_authorized_keys:\n      - {ssh_pubkey}")
+        lines += [
+            "    ssh_authorized_keys:",
+            f"      - {ssh_pubkey}",
+        ]
 
-    # meta-data for cloud-init (instance ID and hostname)
+    # Add a command to enable and start the qemu-guest-agent service on boot
+    lines += [
+        "runcmd:",
+        "  - [ systemctl, enable, --now, qemu-guest-agent ]",
+    ]
+
+    # Join all lines into a single string for the user-data file
+    user_data = "\n".join(lines) + "\n"
+    # Create meta-data file with a unique instance ID and the hostname
     meta_data = f"instance-id: {uuid.uuid4()}\nlocal-hostname: {name}\n"
 
-    # Create a temporary directory to hold the files
+    # Create a temporary directory to hold the files before making the ISO
     with tempfile.TemporaryDirectory() as td:
-        ud = pathlib.Path(td, "user-data"); md = pathlib.Path(td, "meta-data")
-        # Write user-data and meta-data files
-        ud.write_text("\n".join(user_data) + "\n", encoding="utf-8")
-        md.write_text(meta_data, encoding="utf-8")
-        # Create the seed ISO using cloud-localds
-        iso = pathlib.Path(td, f"{name}-seed.iso")
+        ud = pathlib.Path(td, "user-data")  # Path for user-data file
+        md = pathlib.Path(td, "meta-data")  # Path for meta-data file
+        ud.write_text(user_data, encoding="utf-8")  # Write user-data
+        md.write_text(meta_data, encoding="utf-8")  # Write meta-data
+        iso = pathlib.Path(td, f"{name}-seed.iso")  # Path for the ISO file
+        # Use cloud-localds to create the seed ISO from user-data and meta-data
         _run(["cloud-localds", str(iso), str(ud), str(md)])
+        final = os.path.join(IMAGES_DIR, f"{name}-seed.iso")  # Final destination
         # Move the ISO to the images directory (requires sudo)
-        final = os.path.join(IMAGES_DIR, f"{name}-seed.iso")
         _run(["sudo", "mv", str(iso), final])
-    # Return the path to the final ISO
+    # Return the path to the final ISO file
     return final
+
 
 
 # Create a new VM with the given parameters
