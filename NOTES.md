@@ -44,3 +44,9 @@ git commit -m "Scaffold FastAPI app with health endpoint"
 
 # Push committed changes to remote repository (GitHub)
 git push
+
+
+# Useful Commands
+
+# Use to ssh into a new vm change the username and ip to your use
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ubuntu@192.168.122.xx

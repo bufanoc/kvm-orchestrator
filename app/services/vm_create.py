@@ -78,5 +78,5 @@ def create_vm(*, name: str, vcpus: int, memory_mb: int, disk_gb: int, network: s
         "--network", f"network={network}",
         "--graphics", "none",
         "--noautoconsole",
-        "--wait", "-1"
+        "--wait", "0" # <-- was "-1"; 0 = return immediately after start
     ])

@@ -8,7 +8,7 @@ from app.services.vm_create import create_vm
 # Import VM lifecycle functions from app/services/libvirt_client.py.
 from app.services.libvirt_client import list_vms, get_vm_info, vm_start, vm_shutdown, vm_destroy, vm_delete
 
-
+import subprocess, re, time # Added on 08102025
 
 # Create a router for all VM-related endpoints. All routes here will be prefixed with '/vms' and tagged as 'vms' in docs.
 router = APIRouter(prefix="/vms", tags=["vms"])
@@ -75,6 +75,11 @@ def destroy_vm(name: str):
 # Calls create_vm() from app/services/vm_create.py, which handles disk, cloud-init, and libvirt domain creation.
 @router.post("/")
 def create_vm_endpoint(spec: CreateVm):
+    # 1) Reject duplicate names early
+    if get_vm_info(spec.name) is not None:
+        raise HTTPException(status_code=409, detail=f"VM '{spec.name}' already exists")
+
+    # 2) Create the VM
     create_vm(
         name=spec.name,           # VM name (string, validated by CreateVm in app/models.py)
         vcpus=spec.vcpus,         # Number of virtual CPUs (int)
@@ -83,7 +88,28 @@ def create_vm_endpoint(spec: CreateVm):
         network=spec.network,     # Network name or config (string)
         ssh_pubkey=spec.ssh_pubkey, # SSH public key (string, see app/models.py for usage)
     )
-    return {"message": f"VM '{spec.name}' created"}
+
+    # 3) Poll DHCP for an IP (up to ~60s)
+    ip = _wait_for_ip(spec.name, network=spec.network, timeout=60, interval=2)
+    return {"message": f"VM '{spec.name}' created", "name": spec.name, "ip": ip}
+def _wait_for_ip(name: str, network: str = "default", timeout: int = 60, interval: int = 2) -> str | None:
+    """
+    Poll `virsh net-dhcp-leases <network>` for a lease that includes the VM's name.
+    Returns the IPv4 string or None if not found within timeout.
+    """
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            out = subprocess.check_output(["virsh", "net-dhcp-leases", network], text=True)
+            for line in out.splitlines():
+                if name in line:
+                    m = re.search(r"(\d+\.\d+\.\d+\.\d+)/\d+", line)
+                    if m:
+                        return m.group(1)
+        except subprocess.CalledProcessError:
+            pass
+        time.sleep(interval)
+    return None
 
 # Delete a VM by name.
 # Calls vm_delete() from app/services/libvirt_client.py, which stops, undefines, and removes all storage for the VM.
