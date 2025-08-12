@@ -132,27 +132,62 @@ def delete_vm(name: str):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-# Get the IP address of a VM by name using virsh net-dhcp-leases.
-# This endpoint parses the output of 'virsh net-dhcp-leases default' to find the IP for the given VM name.
+
 @router.get("/{name}/ip")
-def vm_ip(name: str):
-    # Import required modules for running shell commands and parsing text
-    import subprocess, json, re
-    try:
-        # Run the virsh command to get DHCP leases for the 'default' network
-        out = subprocess.check_output(["virsh", "net-dhcp-leases", "default"], text=True)
-        # Loop through each line of the command output
-        for line in out.splitlines():
-            # Check if the VM name appears in the line
-            if name in line:
-                # Use a regular expression to find an IPv4 address in the line
-                m = re.search(r"(\d+\.\d+\.\d+\.\d+)/\d+", line)
-                if m:
-                    # If found, return the VM name and its IP address as JSON
-                    return {"name": name, "ip": m.group(1)}
-        # If no matching line or IP is found, return a 404 error
-        raise HTTPException(status_code=404, detail=f"No IP found for {name}")
-    except subprocess.CalledProcessError as e:
-        # If the virsh command fails, return a 500 error with the error message
-        raise HTTPException(status_code=500, detail=e.stderr or str(e))
+def vm_ip(name: str, network: str = "default", timeout: int = 5):
+    """
+    Return the VM's IPv4. Try guest-agent (domifaddr) first, then DHCP leases by MAC.
+    `timeout` is seconds to wait (small poll) for agent/DHCP.
+    """
+    # 1) domifaddr (guest agent)
+    ip = _ip_via_domifaddr(name, timeout=timeout)
+    if ip:
+        return {"name": name, "ip": ip, "source": "guest-agent"}
+
+    # 2) DHCP leases by MAC (fallback)
+    macs = get_vm_macs(name)
+    ip = _ip_via_dhcp(macs=macs, network=network, timeout=timeout)
+    if ip:
+        return {"name": name, "ip": ip, "source": "dhcp-leases"}
+
+    raise HTTPException(status_code=404, detail=f"No IP found for {name}")
+# Helper function to get IP via guest agent (domifaddr).
+def _ip_via_domifaddr(name: str, timeout: int = 5) -> str | None:
+    """
+    Poll virsh domifaddr (guest agent) for up to `timeout` seconds.
+    """
+    deadline = time.time() + timeout
+    ip_re = re.compile(r"(\d+\.\d+\.\d+\.\d+)/\d+")
+    while time.time() < deadline:
+        try:
+            out = subprocess.check_output(["virsh", "domifaddr", name], text=True)
+            m = ip_re.search(out)
+            if m:
+                return m.group(1)
+        except subprocess.CalledProcessError:
+            pass
+        time.sleep(1)
+    return None
+
+def _ip_via_dhcp(macs: list[str], network: str = "default", timeout: int = 5) -> str | None:
+    """
+    Poll virsh net-dhcp-leases and match leases by MAC addresses.
+    """
+    macs = [m.lower() for m in (macs or [])]
+    deadline = time.time() + timeout
+    ip_re = re.compile(r"(\d+\.\d+\.\d+\.\d+)/\d+")
+    while time.time() < deadline:
+        try:
+            out = subprocess.check_output(["virsh", "net-dhcp-leases", network], text=True)
+            for line in out.splitlines():
+                line_l = line.lower()
+                if any(mac in line_l for mac in macs):
+                    m = ip_re.search(line)
+                    if m:
+                        return m.group(1)
+        except subprocess.CalledProcessError:
+            pass
+        time.sleep(1)
+    return None
+
 
