@@ -1,0 +1,66 @@
+# Use '>' instead of TAB for recipe lines
+.RECIPEPREFIX := >
+.DEFAULT_GOAL := dev
+
+# Paths
+VENV_BIN := .venv/bin
+UVICORN  := $(VENV_BIN)/uvicorn
+PYTHON   := $(VENV_BIN)/python
+
+# Dev: install CLI shim then run API in foreground
+dev: install-cli
+> $(UVICORN) app.main:app --reload --host 0.0.0.0 --port 8000
+
+# Foreground dev server only
+run:
+> $(UVICORN) app.main:app --reload --host 0.0.0.0 --port 8000
+
+# Start server in background, write PID, log to uvicorn.log
+up:
+> nohup $(UVICORN) app.main:app --reload --host 0.0.0.0 --port 8000 > uvicorn.log 2>&1 & echo $$! > .uvicorn.pid; \
+> echo "API started (PID $$(cat .uvicorn.pid)). Logs: uvicorn.log"
+
+# Stop background server
+down:
+> if [ -f .uvicorn.pid ]; then \
+>   kill $$(cat .uvicorn.pid) && rm .uvicorn.pid && echo "API stopped"; \
+> else \
+>   echo "No PID file (.uvicorn.pid). Is the API running via 'make up'?"; \
+> fi
+
+# Tail logs
+logs:
+> tail -f uvicorn.log
+
+# Install CLI shim into venv so 'kvm-orchestrator' works
+install-cli:
+	mkdir -p tools
+	cat > tools/kvm-orchestrator <<'SH'
+#!/usr/bin/env bash
+set -e
+# Prefer active venv's python; fall back to .venv, then system python3/python
+if [ -n "$$VIRTUAL_ENV" ] && [ -x "$$VIRTUAL_ENV/bin/python" ]; then
+  PY="$$VIRTUAL_ENV/bin/python"
+elif [ -x ".venv/bin/python" ]; then
+  PY=".venv/bin/python"
+else
+  PY="$$(command -v python3 || command -v python)"
+fi
+exec "$$PY" -m cli "$$@"
+SH
+	chmod +x tools/kvm-orchestrator
+	ln -sf $(PWD)/tools/kvm-orchestrator .venv/bin/kvm-orchestrator
+	@echo "Installed: .venv/bin/kvm-orchestrator"
+
+# Run CLI via Make (e.g., make cli ARGS="list")
+cli:
+> $(PYTHON) -m cli $(ARGS)
+
+# Placeholders
+fmt:
+> echo "Add ruff/black later (optional)."
+
+test:
+> echo "No tests yet."
+
+.PHONY: dev run up down logs install-cli cli fmt test
