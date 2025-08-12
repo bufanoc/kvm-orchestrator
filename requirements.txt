@@ -2,3 +2,5 @@ fastapi~=0.115
 uvicorn[standard]~=0.30
 libvirt-python~=10.0
 lxml~=5.3
+typer[all]~=0.12
+requests~=2.32
