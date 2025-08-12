@@ -136,37 +136,53 @@ def delete_vm(name: str):
 @router.get("/{name}/ip")
 def vm_ip(name: str, network: str = "default", timeout: int = 5):
     """
-    Return the VM's IPv4. Try guest-agent (domifaddr) first, then DHCP leases by MAC.
-    `timeout` is seconds to wait (small poll) for agent/DHCP.
+    Return the VM's IPv4 address. This function tries two methods:
+    1. Use the guest agent (virsh domifaddr) to get the IP from inside the VM.
+    2. If that fails, look up the IP in the DHCP leases by matching the VM's MAC address.
+    The `timeout` parameter controls how long to wait for each method.
     """
-    # 1) domifaddr (guest agent)
+    # Try to get the IP address using the guest agent (domifaddr) first.
+    # This method asks the VM directly (if the guest agent is running inside the VM).
     ip = _ip_via_domifaddr(name, timeout=timeout)
     if ip:
+        # If we got an IP from the guest agent, return it with the source info.
         return {"name": name, "ip": ip, "source": "guest-agent"}
 
-    # 2) DHCP leases by MAC (fallback)
+    # If the guest agent method didn't work, try to get the IP from DHCP leases.
+    # First, get the list of MAC addresses for this VM.
     macs = get_vm_macs(name)
+    # Now, try to find the IP by looking up the MAC addresses in the DHCP leases.
     ip = _ip_via_dhcp(macs=macs, network=network, timeout=timeout)
     if ip:
+        # If we found an IP in the DHCP leases, return it with the source info.
         return {"name": name, "ip": ip, "source": "dhcp-leases"}
 
+    # If neither method worked, return a 404 error saying no IP was found.
     raise HTTPException(status_code=404, detail=f"No IP found for {name}")
 # Helper function to get IP via guest agent (domifaddr).
 def _ip_via_domifaddr(name: str, timeout: int = 5) -> str | None:
     """
-    Poll virsh domifaddr (guest agent) for up to `timeout` seconds.
+    Try to get the VM's IP address using the guest agent (virsh domifaddr).
+    This function will keep trying for up to `timeout` seconds.
+    Returns the IP address as a string if found, or None if not found.
     """
-    deadline = time.time() + timeout
-    ip_re = re.compile(r"(\d+\.\d+\.\d+\.\d+)/\d+")
+    deadline = time.time() + timeout  # Calculate the time when we should stop trying.
+    ip_re = re.compile(r"(\d+\.\d+\.\d+\.\d+)/\d+")  # Regex to match IPv4 addresses like 192.168.1.10/24
     while time.time() < deadline:
         try:
+            # Run the command: virsh domifaddr <name> to get the VM's network info from the guest agent.
             out = subprocess.check_output(["virsh", "domifaddr", name], text=True)
+            # Search the output for an IPv4 address using the regex.
             m = ip_re.search(out)
             if m:
+                # If we found an IP address, return just the IP part (not the /24 subnet).
                 return m.group(1)
         except subprocess.CalledProcessError:
+            # If the command fails (e.g., guest agent not running), just ignore and try again.
             pass
+        # Wait 1 second before trying again (so we don't spam the system).
         time.sleep(1)
+    # If we never found an IP, return None.
     return None
 
 def _ip_via_dhcp(macs: list[str], network: str = "default", timeout: int = 5) -> str | None:
