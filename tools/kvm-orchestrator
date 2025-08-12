@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -e
+# Prefer active venv's python; fall back to .venv, then system python3/python
+if [ -n "$VIRTUAL_ENV" ] && [ -x "$VIRTUAL_ENV/bin/python" ]; then
+  PY="$VIRTUAL_ENV/bin/python"
+elif [ -x ".venv/bin/python" ]; then
+  PY=".venv/bin/python"
+else
+  PY="$(command -v python3 || command -v python)"
+fi
+exec "$PY" -m cli "$@"
