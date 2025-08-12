@@ -8,3 +8,6 @@ __pycache__/
 .idea/
 .vscode/
 .DS_Store
+.uvicorn.pid
+Makefile.bak
+uvicorn.log
