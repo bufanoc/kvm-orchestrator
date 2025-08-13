@@ -1,0 +1,137 @@
+# KVM Orchestrator: Step-by-Step Installation Guide (Ubuntu 22.04)
+
+This guide will help you set up the KVM Orchestrator backend and CLI from scratch on a fresh Ubuntu 22.04 server. It covers all prerequisites, Python virtual environment setup, and how to run the API and CLI tools.
+
+---
+
+## 1. System Prerequisites
+
+First, update your system and install the required system packages:
+
+```bash
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y git python3 python3-venv python3-pip make qemu-kvm libvirt-daemon-system libvirt-clients bridge-utils virtinst
+```
+
+- **git**: For cloning the repository
+- **python3, python3-venv, python3-pip**: For Python and virtual environments
+- **make**: For running Makefile commands
+- **qemu-kvm, libvirt-***: For virtualization (KVM, libvirt)
+- **bridge-utils, virtinst**: For networking and VM creation
+
+**Optional but recommended:**
+- Add your user to the `libvirt` and `kvm` groups so you can manage VMs without sudo:
+
+```bash
+sudo usermod -aG libvirt $(whoami)
+sudo usermod -aG kvm $(whoami)
+# Log out and log back in for group changes to take effect
+```
+
+---
+
+## 2. Clone the Repository
+
+```bash
+git clone https://github.com/bufanoc/kvm-orchestrator.git
+cd kvm-orchestrator
+```
+
+---
+
+## 3. Set Up Python Virtual Environment
+
+Create and activate a Python virtual environment:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+Upgrade pip (recommended):
+
+```bash
+pip install --upgrade pip
+```
+
+---
+
+## 4. Install Python Dependencies
+
+Install all required Python packages:
+
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+## 5. Install and Set Up the CLI Tool
+
+The Makefile provides a target to install the CLI shim:
+
+```bash
+make install-cli
+```
+
+This will create a `kvm-orchestrator` command in your `.venv/bin/` directory.
+
+---
+
+## 6. Running the Backend API
+
+You can start the FastAPI backend using the Makefile:
+
+- For development (foreground, auto-reload):
+
+```bash
+make dev
+```
+
+- To run in the background:
+
+```bash
+make up
+```
+
+- To stop the background server:
+
+```bash
+make down
+```
+
+---
+
+## 7. Using the CLI
+
+With the virtual environment activated, you can use the CLI:
+
+```bash
+.venv/bin/kvm-orchestrator list
+```
+
+Or, if `.venv/bin` is in your PATH, just:
+
+```bash
+kvm-orchestrator list
+```
+
+---
+
+## 8. Troubleshooting
+
+- If you get permission errors with libvirt/KVM, make sure you are in the `libvirt` and `kvm` groups and have logged out/in.
+- If `make dev` or `make up` fails, check that your virtual environment is activated and dependencies are installed.
+- For any issues, check the logs (`uvicorn.log`) or run commands with `-h` for help.
+
+---
+
+## 9. Additional Notes
+
+- The backend API runs on port 8000 by default (http://localhost:8000)
+- You can use `curl` or the CLI to interact with the API.
+- For development, you may want to install `black` and `ruff` for code formatting and linting (see Makefile `fmt` target).
+
+---
+
+You are now ready to use the KVM Orchestrator backend and CLI!
