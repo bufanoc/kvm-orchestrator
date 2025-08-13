@@ -1,4 +1,3 @@
-
 # Import BaseModel and Field from Pydantic. Pydantic is used for data validation and settings management using Python type annotations.
 from pydantic import BaseModel, Field
 # Import Optional from typing, which allows a field to be None (not required).
@@ -19,3 +18,9 @@ class CreateVm(BaseModel):
     network: str = "default"          # libvirt network name
     # SSH public key to inject into the VM for remote access. Optional; if not provided, no key is injected.
     ssh_pubkey: Optional[str] = None  # user’s ~/.ssh/id_rsa.pub
+
+class NetworkCreate(BaseModel):
+    # This class defines the data structure for creating a new network.
+    # It inherits from BaseModel, which provides validation and serialization.
+    name: str  # The name of the network to create
+    bridge: str  # The name of the Linux bridge to bind the network to
